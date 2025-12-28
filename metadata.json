@@ -1,0 +1,5 @@
+{
+  "name": "Copy of AI Unit Test Generator",
+  "description": "An intelligent coding environment that automatically generates and executes unit tests for your JavaScript/TypeScript functions using Gemini AI.",
+  "requestFramePermissions": []
+}
