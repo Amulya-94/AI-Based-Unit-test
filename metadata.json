@@ -1,4 +1,5 @@
 {
+  "id": "ai-unit-test-generator",
   "name": "AI-Based Unit Test Generator",
   "description": "A client-side intelligent coding environment that generates and executes unit tests directly in your browser using Gemini.",
   "requestFramePermissions": []

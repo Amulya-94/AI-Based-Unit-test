@@ -6,7 +6,7 @@ import TestPanel from './components/TestPanel';
 import { generateTests, generateTestFromPrompt } from './services/geminiService';
 import { runTestsInSandbox } from './services/sandboxService';
 import { projectService } from './services/projectService';
-import { Play, Sparkles, Split, Maximize2, Undo, Redo, X, CheckCircle, AlertCircle, Info, MessageSquarePlus, Settings, Zap } from 'lucide-react';
+import { Play, Sparkles, Split, Maximize2, Undo, Redo, X, CheckCircle, AlertCircle, Info, MessageSquarePlus, Settings, Zap, Copy, Package } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { OnMount } from '@monaco-editor/react';
 
@@ -64,6 +64,7 @@ function App() {
 
   // Settings State
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  const [appId, setAppId] = useState<string>("loading...");
 
   const codeEditorRef = useRef<any>(null);
   const testEditorRef = useRef<any>(null);
@@ -84,8 +85,18 @@ function App() {
     };
     loadData();
 
+    // Load API Key
     const savedKey = localStorage.getItem('gemini_api_key');
     if (savedKey) setGeminiKeyInput(savedKey);
+
+    // Load App Metadata for ID
+    fetch('/metadata.json')
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.id) setAppId(data.id);
+        })
+        .catch(() => setAppId("unknown-app-id"));
+
   }, []);
 
   // Sync active project state
@@ -252,7 +263,7 @@ function App() {
       {/* Settings Modal */}
       {isSettingsModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="w-[450px] rounded-lg border border-neutral-700 bg-neutral-900 p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="w-[450px] rounded-lg border border-neutral-700 bg-neutral-900 p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                         <Settings className="h-5 w-5 text-neutral-400" />
@@ -263,7 +274,8 @@ function App() {
                     </button>
                 </div>
                 
-                <div className="space-y-4">
+                <div className="space-y-6">
+                    {/* API Key Section */}
                     <div>
                         <label className="block text-sm font-medium text-neutral-300 mb-1">Gemini API Key</label>
                         <div className="relative">
@@ -279,6 +291,61 @@ function App() {
                         <p className="mt-1 text-xs text-neutral-500">
                             Stored securely in your browser's local storage.
                         </p>
+                    </div>
+
+                    {/* App Info Section */}
+                    <div className="pt-4 border-t border-neutral-800">
+                         <h4 className="text-sm font-semibold text-neutral-300 mb-3 flex items-center gap-2">
+                            <Package className="h-4 w-4 text-blue-500" /> Application Info
+                         </h4>
+                         
+                         <div className="space-y-4">
+                             {/* App ID */}
+                             <div>
+                                 <label className="block text-xs font-medium text-neutral-500 mb-1">Application ID (Deployment)</label>
+                                 <div className="flex gap-2">
+                                    <input 
+                                        readOnly
+                                        value={appId}
+                                        className="w-full rounded-md border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-xs text-neutral-300 font-mono focus:outline-none cursor-text select-all"
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(appId);
+                                            showNotification("App ID copied", "success");
+                                        }}
+                                        className="p-2 rounded-md border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
+                                        title="Copy App ID"
+                                    >
+                                        <Copy className="h-4 w-4" />
+                                    </button>
+                                 </div>
+                             </div>
+
+                             {/* Project ID */}
+                             {activeProjectId && (
+                                <div>
+                                     <label className="block text-xs font-medium text-neutral-500 mb-1">Active Project ID</label>
+                                     <div className="flex gap-2">
+                                        <input 
+                                            readOnly
+                                            value={activeProjectId}
+                                            className="w-full rounded-md border border-neutral-700 bg-neutral-800/50 px-3 py-2 text-xs text-neutral-300 font-mono focus:outline-none cursor-text select-all"
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(activeProjectId);
+                                                showNotification("Project ID copied", "success");
+                                            }}
+                                            className="p-2 rounded-md border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
+                                            title="Copy Project ID"
+                                        >
+                                            <Copy className="h-4 w-4" />
+                                        </button>
+                                     </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
                 
