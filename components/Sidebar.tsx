@@ -1,6 +1,6 @@
 import React from 'react';
 import { Project } from '../types';
-import { Plus, Folder, Trash2, Code2 } from 'lucide-react';
+import { Plus, Folder, Trash2, Code2, Settings, Github } from 'lucide-react';
 
 interface SidebarProps {
   projects: Project[];
@@ -8,6 +8,7 @@ interface SidebarProps {
   onSelectProject: (id: string) => void;
   onCreateProject: () => void;
   onDeleteProject: (id: string) => void;
+  onOpenSettings: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -16,6 +17,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onSelectProject,
   onCreateProject,
   onDeleteProject,
+  onOpenSettings
 }) => {
   return (
     <div className="flex h-full w-64 flex-col border-r border-neutral-700 bg-neutral-900">
@@ -75,9 +77,23 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      <div className="border-t border-neutral-800 p-4 text-xs text-neutral-600">
-        <p>Powered by Gemini 3 Flash</p>
-        <p className="mt-1">v1.0.0</p>
+      <div className="border-t border-neutral-800 p-4 space-y-2">
+        <a 
+            href="https://github.com" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="flex w-full items-center gap-2 text-xs text-neutral-400 hover:text-white transition-colors p-1 rounded hover:bg-neutral-800"
+        >
+            <Github className="h-4 w-4" />
+            <span>GitHub Repo</span>
+        </a>
+        <button 
+            onClick={onOpenSettings} 
+            className="flex w-full items-center gap-2 text-xs text-neutral-400 hover:text-white transition-colors p-1 rounded hover:bg-neutral-800"
+        >
+            <Settings className="h-4 w-4" />
+            <span>Settings</span>
+        </button>
       </div>
     </div>
   );

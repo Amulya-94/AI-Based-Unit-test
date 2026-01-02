@@ -5,7 +5,8 @@ import Editor from './components/Editor';
 import TestPanel from './components/TestPanel';
 import { generateTests, generateTestFromPrompt } from './services/geminiService';
 import { runTestsInSandbox } from './services/sandboxService';
-import { Play, Sparkles, Split, Maximize2, Undo, Redo, X, CheckCircle, AlertCircle, Info, MessageSquarePlus } from 'lucide-react';
+import { projectService } from './services/projectService';
+import { Play, Sparkles, Split, Maximize2, Undo, Redo, X, CheckCircle, AlertCircle, Info, MessageSquarePlus, Settings, Zap } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { OnMount } from '@monaco-editor/react';
 
@@ -46,11 +47,7 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
 };
 
 function App() {
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const saved = localStorage.getItem('testgen_projects');
-    return saved ? JSON.parse(saved) : [];
-  });
-  
+  const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   
@@ -60,31 +57,36 @@ function App() {
   const [layout, setLayout] = useState<'split' | 'code' | 'tests'>('split');
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
-  // New state for single test generation modal
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [promptInput, setPromptInput] = useState("");
   const [isGeneratingSingle, setIsGeneratingSingle] = useState(false);
+
+  // Settings State
+  const [geminiKeyInput, setGeminiKeyInput] = useState("");
 
   const codeEditorRef = useRef<any>(null);
   const testEditorRef = useRef<any>(null);
 
-  // Initialize with a default project if none exist
+  const showNotification = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+      setNotification({ message, type });
+  }, []);
+
   useEffect(() => {
-    if (projects.length === 0) {
-      const newProject: Project = {
-        id: uuidv4(),
-        name: 'My First Project',
-        code: DEFAULT_CODE,
-        testCode: DEFAULT_TEST_CODE,
-        language: 'javascript',
-        createdAt: Date.now(),
-      };
-      setProjects([newProject]);
-      setActiveProjectId(newProject.id);
-    } else if (!activeProjectId && projects.length > 0) {
-      setActiveProjectId(projects[0].id);
-    }
-  }, [projects.length, activeProjectId]);
+    const loadData = async () => {
+        const data = await projectService.getAll();
+        setProjects(data);
+        if (data.length > 0 && !activeProjectId) {
+          setActiveProjectId(data[0].id);
+        } else if (data.length === 0) {
+           await handleCreateProject(true);
+        }
+    };
+    loadData();
+
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) setGeminiKeyInput(savedKey);
+  }, []);
 
   // Sync active project state
   useEffect(() => {
@@ -94,11 +96,6 @@ function App() {
     }
   }, [activeProjectId, projects]);
 
-  // Auto-save to local storage
-  useEffect(() => {
-    localStorage.setItem('testgen_projects', JSON.stringify(projects));
-  }, [projects]);
-
   // Auto-dismiss notification
   useEffect(() => {
       if (notification) {
@@ -107,31 +104,44 @@ function App() {
       }
   }, [notification]);
 
-  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-      setNotification({ message, type });
+  const handleSaveSettings = () => {
+      if (geminiKeyInput.trim()) {
+          localStorage.setItem('gemini_api_key', geminiKeyInput.trim());
+          showNotification("Gemini API Key saved!", "success");
+      } else {
+          localStorage.removeItem('gemini_api_key');
+          showNotification("API Key removed", "info");
+      }
+      setIsSettingsModalOpen(false);
   };
 
-  const updateProject = (updates: Partial<Project>) => {
-    if (!activeProjectId) return;
-    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, ...updates } : p));
+  const updateProject = async (updates: Partial<Project>) => {
+    if (!activeProjectId || !activeProject) return;
+    const updatedProject = { ...activeProject, ...updates };
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? updatedProject : p));
+    setActiveProject(updatedProject);
+    await projectService.update(updatedProject);
   };
 
-  const handleCreateProject = () => {
+  const handleCreateProject = async (silent = false) => {
     const newProject: Project = {
       id: uuidv4(),
       name: `Project ${projects.length + 1}`,
-      code: '// New function...\n',
+      code: DEFAULT_CODE,
       testCode: '',
       language: 'javascript',
       createdAt: Date.now(),
     };
-    setProjects(prev => [...prev, newProject]);
+
+    await projectService.create(newProject);
+    setProjects(prev => [newProject, ...prev]); 
     setActiveProjectId(newProject.id);
     setExecutionResult(null);
-    showNotification("New project created", "success");
+    if (!silent) showNotification("New project created", "success");
   };
 
-  const handleDeleteProject = (id: string) => {
+  const handleDeleteProject = async (id: string) => {
+    await projectService.delete(id);
     const newProjects = projects.filter(p => p.id !== id);
     setProjects(newProjects);
     if (activeProjectId === id) {
@@ -152,8 +162,6 @@ function App() {
       const generatedTests = await generateTests(activeProject.code);
       updateProject({ testCode: generatedTests });
       showNotification("Tests generated successfully!", "success");
-      
-      // Automatically run tests after generation
       setTimeout(() => handleRunTests(), 500);
     } catch (error: any) {
       console.error(error);
@@ -174,8 +182,6 @@ function App() {
         showNotification("Test added successfully", "success");
         setPromptInput("");
         setIsPromptModalOpen(false);
-
-        // Scroll to the bottom of the test editor to show the new test
         setTimeout(() => {
           if (testEditorRef.current) {
             const model = testEditorRef.current.getModel();
@@ -186,7 +192,6 @@ function App() {
             }
           }
         }, 100);
-
     } catch (error: any) {
         console.error(error);
         showNotification(error.message || "Failed to generate test case", "error");
@@ -201,15 +206,8 @@ function App() {
     setIsRunning(true);
     setExecutionResult(null);
     try {
-      // Small delay to allow UI to update
-      await new Promise(r => setTimeout(r, 100));
       const result = await runTestsInSandbox(activeProject.code, activeProject.testCode);
       setExecutionResult(result);
-      if (result.success) {
-        // showNotification("Tests executed successfully", "success");
-      } else {
-        showNotification("Test execution error", "error");
-      }
     } catch (err: any) {
        setExecutionResult({
            logs: [],
@@ -217,11 +215,11 @@ function App() {
            success: false,
            error: err.message
        });
-       showNotification("Sandbox error: " + err.message, "error");
+       showNotification("Execution error: " + err.message, "error");
     } finally {
       setIsRunning(false);
     }
-  }, [activeProject]);
+  }, [activeProject, showNotification]);
 
   const handleCodeEditorDidMount: OnMount = (editor) => {
     codeEditorRef.current = editor;
@@ -241,8 +239,6 @@ function App() {
     editorRef.current?.focus();
   };
 
-  if (!activeProject) return <div className="flex h-screen w-screen items-center justify-center bg-neutral-900 text-white">Loading...</div>;
-
   return (
     <div className="flex h-screen w-screen bg-neutral-900 text-white">
       {notification && (
@@ -251,6 +247,57 @@ function App() {
             type={notification.type} 
             onClose={() => setNotification(null)} 
           />
+      )}
+
+      {/* Settings Modal */}
+      {isSettingsModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="w-[450px] rounded-lg border border-neutral-700 bg-neutral-900 p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Settings className="h-5 w-5 text-neutral-400" />
+                        Settings
+                    </h3>
+                    <button onClick={() => setIsSettingsModalOpen(false)} className="text-neutral-400 hover:text-white">
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-neutral-300 mb-1">Gemini API Key</label>
+                        <div className="relative">
+                            <Zap className="absolute left-3 top-2.5 h-4 w-4 text-yellow-500" />
+                            <input 
+                                type="password" 
+                                value={geminiKeyInput}
+                                onChange={(e) => setGeminiKeyInput(e.target.value)}
+                                className="w-full rounded-md border border-neutral-700 bg-black/50 pl-9 pr-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-blue-500 focus:outline-none transition-colors"
+                                placeholder="AIza..."
+                            />
+                        </div>
+                        <p className="mt-1 text-xs text-neutral-500">
+                            Stored securely in your browser's local storage.
+                        </p>
+                    </div>
+                </div>
+                
+                <div className="flex justify-end gap-3 mt-6">
+                    <button 
+                        onClick={() => setIsSettingsModalOpen(false)}
+                        className="px-4 py-2 rounded-md text-sm font-medium text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={handleSaveSettings}
+                        className="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                    >
+                        Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
       )}
 
       {/* Prompt Modal */}
@@ -301,20 +348,23 @@ function App() {
         projects={projects}
         activeProjectId={activeProjectId}
         onSelectProject={setActiveProjectId}
-        onCreateProject={handleCreateProject}
+        onCreateProject={() => handleCreateProject(false)}
         onDeleteProject={handleDeleteProject}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Bar */}
         <header className="flex h-16 items-center justify-between border-b border-neutral-700 bg-neutral-800 px-6">
           <div className="flex items-center gap-4">
-             <input 
-                type="text" 
-                value={activeProject.name} 
-                onChange={(e) => updateProject({ name: e.target.value })}
-                className="bg-transparent text-lg font-semibold text-white focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-2"
-             />
+             {activeProject && (
+                 <input 
+                    type="text" 
+                    value={activeProject.name} 
+                    onChange={(e) => updateProject({ name: e.target.value })}
+                    className="bg-transparent text-lg font-semibold text-white focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-2"
+                 />
+             )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -328,7 +378,7 @@ function App() {
              
              <button
               onClick={handleGenerateTests}
-              disabled={isGenerating}
+              disabled={isGenerating || !activeProject}
               className={`flex items-center space-x-2 rounded-md px-4 py-2 font-medium transition-all ${
                   isGenerating 
                   ? 'bg-purple-900/50 text-purple-300 cursor-not-allowed' 
@@ -350,7 +400,7 @@ function App() {
 
              <button
               onClick={handleRunTests}
-              disabled={isRunning}
+              disabled={isRunning || !activeProject}
               className={`flex items-center space-x-2 rounded-md px-4 py-2 font-medium transition-all ${
                   isRunning
                   ? 'bg-green-900/50 text-green-300 cursor-not-allowed'
@@ -364,6 +414,7 @@ function App() {
         </header>
 
         {/* Main Content Area */}
+        {activeProject ? (
         <div className="flex flex-1 overflow-hidden">
             {/* Editors Area */}
             <div className={`flex flex-col ${layout === 'split' ? 'w-2/3' : 'w-full'} border-r border-neutral-700 transition-all duration-300`}>
@@ -445,6 +496,11 @@ function App() {
                 <TestPanel executionResult={executionResult} isRunning={isRunning} />
             </div>
         </div>
+        ) : (
+            <div className="flex h-full items-center justify-center text-neutral-500">
+                Select or create a project
+            </div>
+        )}
       </div>
     </div>
   );
